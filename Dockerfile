@@ -1,122 +1,135 @@
-FROM phusion/baseimage
-# Ensure UTF-8
-RUN locale-gen en_US.UTF-8
-ENV LANG       en_US.UTF-8
-ENV LC_ALL     en_US.UTF-8
-ENV HOME /root
+FROM php:fpm-alpine3.7
 
-ENV DRUSH_VERSION 8.1.15
+ENV DRUSH_VERSION 8.1.16
+ENV DRUSH_LAUCHER 0.6.0
+ENV COLUMNS 0
 
-CMD ["/sbin/my_init"]
+###### Install packages
+RUN apk --no-cache add g++ gcc make autoconf curl curl-dev bzip2 bzip2-dev zip icu icu-libs icu-dev \
+    libmemcached libmemcached-dev zlib-dev cyrus-sasl-dev mysql-client nginx supervisor tzdata bash \
+    libpng-dev freetype-dev libjpeg-turbo-dev libmcrypt-dev git \
+    postgresql-libs postgresql-dev
+RUN docker-php-ext-configure gd --with-gd --with-freetype-dir=/usr/include/ --with-png-dir=/usr/include/ --with-jpeg-dir=/usr/include/
 
-# Nginx-PHP Installation
-RUN apt-get update
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y vim unzip curl wget  mysql-client-5.7 build-essential python-software-properties
-RUN add-apt-repository -y ppa:nginx/stable
-RUN add-apt-repository -y ppa:ondrej/php
-RUN apt-get update
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y nginx
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y --force-yes \
-    php7.1-mysql \
-    php7.1-xml \
-    php7.1-gd \
-    php7.1-json \
-    php7.1-curl \
-    php7.1-mbstring \
-    php7.1-opcache \
-    php7.1-bz2 \
-    php7.1-fpm \
-    php7.1-common \
-    php7.1-mcrypt \
-    php7.1-dev \
-    php7.1-xml \
-    php7.1-bcmath \
-    php7.1-soap \
-    php7.1-pgsql \
-    php7.1-zip
+##### Install memcached and redis packages
 
-###### Install php-fpm extension######
-### Enable memcache
-RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y pkg-config zlib1g-dev re2c libmemcached-dev supervisor
-RUN set -x && \
-    cd /usr/share/ && \
-    wget https://github.com/php-memcached-dev/php-memcached/archive/php7.zip && \
-    unzip php7.zip && rm php7.zip && \
-    cd php-memcached-php7 && \
-    /usr/bin/phpize7.1 && \
-    ./configure --with-php-config=/usr/bin/php-config7.1 && \
-    make && \
-    make install && \
-    touch /etc/php/7.1/mods-available/memcached.ini && \
-    echo "extension=memcached.so" >> /etc/php/7.1/mods-available/memcached.ini && \
-    ln -sf /etc/php/7.1/mods-available/memcached.ini /etc/php/7.1/fpm/conf.d/memcached.ini
+##### Install php extension packages
+RUN docker-php-ext-install mysqli opcache gd bz2 zip intl pdo_mysql bcmath pgsql pdo_pgsql calendar
 
-### Enable redis
-RUN set -x && \
-    cd /usr/share/ && \
-    wget https://github.com/phpredis/phpredis/archive/3.1.4.zip -O phpredis.zip && \
-    unzip phpredis.zip && rm phpredis.zip && \
-    mv phpredis-* phpredis && cd phpredis && \
-    /usr/bin/phpize7.1  && \
-    ./configure --with-php-config=/usr/bin/php-config7.1 && \
-    make && \
-    make install && \
-    touch /etc/php/7.1/mods-available/redis.ini && \
-    echo "extension=redis.so" >> /etc/php/7.1/mods-available/redis.ini && \
-    ln -sf /etc/php/7.1/mods-available/redis.ini /etc/php/7.1/fpm/conf.d/redis.ini
-
-### add php other extension
-ADD extfile/ /var/www/phpext/
-RUN chmod a+x /var/www/phpext/*
-
-###### change php.ini ######
-RUN set -x && \
-    sed -i 's/memory_limit = .*/memory_limit = 1024M/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/post_max_size = .*/post_max_size = 32M/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/upload_max_filesize = .*/upload_max_filesize = 32M/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/post_max_size = .*/post_max_size = 32M/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/^; max_input_vars =.*/max_input_vars =10000/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/^;cgi.fix_pathinfo=.*/cgi.fix_pathinfo = 0;/' /etc/php/7.1/fpm/php.ini && \
-    sed -i 's/\/run\/php\/php7.1-fpm.pid/\/run\/php7.1-fpm.pid/' /etc/php/7.1/fpm/php-fpm.conf
+###### set up timezone
+RUN rm /etc/localtime && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
 ###### install drush ######
-RUN apt-get update -yqq && \
-apt-get -y install mysql-client && \
-curl -fsSL -o /usr/local/bin/drush https://github.com/drush-ops/drush/releases/download/$DRUSH_VERSION/drush.phar | bash && \
-chmod +x /usr/local/bin/drush && \
-drush core-status 
+#RUN curl -fsSL -o /usr/local/bin/drush8 https://github.com/drush-ops/drush/releases/download/$DRUSH_VERSION/drush.phar | sh && \
+#    chmod +x /usr/local/bin/drush8 && \
+#    drush8 core-status 
+
+###### install drush laucher ######
+#RUN wget -O drush.phar https://github.com/drush-ops/drush-launcher/releases/download/$DRUSH_LAUCHER/drush.phar && \
+#    chmod +x drush.phar && \
+#    mv drush.phar /usr/local/bin/drush
+#ENV DRUSH_LAUNCHER_FALLBACK=/usr/local/bin/drush8
 
 ##install composer
-RUN php -r "readfile('https://getcomposer.org/installer');" > composer-setup.php \
-		&& php composer-setup.php \
-		&& php -r "unlink('composer-setup.php');" \
-		&& mv composer.phar /usr/local/bin/composer
+RUN php -r "readfile('https://getcomposer.org/installer');" > composer-setup.php && \
+    php composer-setup.php && \
+    php -r "unlink('composer-setup.php');" && \
+    mv composer.phar /usr/local/bin/composer
 
-###### Chaning timezone ######
-RUN set -x && \
-    unlink /etc/localtime && \
-    ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+###### change php.ini ######
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/php.ini /usr/local/etc/php/
+#RUN sed -i -e "s/listen = 9000//g" /usr/local/etc/php-fpm.d/zz-docker.conf
+#RUN sed -i -e "s/access.log = \/proc\/self\/fd\/2/access.log = \/proc\/self\/fd\/1/g" /usr/local/etc/php-fpm.d/docker.conf
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/www.conf /usr/local/etc/php-fpm.d/www.conf
 
-###### Config nginx ######
-RUN set -x && \
-    chown -R www-data:www-data /var/www/html
 #Update nginx config
-ADD nginx/nginx.conf /etc/nginx/
-ADD nginx/sites/drupal7.conf /etc/nginx/sites-available/
-ADD index.php /var/www/html
-RUN rm /etc/nginx/sites-enabled/default && \
-    mkdir /etc/nginx/ssl
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/nginx.conf /etc/nginx/
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/drupal8.conf /tmp/drupal.conf
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/laravel.conf /tmp/laravel.conf
+RUN mkdir /etc/nginx/ssl /etc/nginx/site-enabled
 
 ###### supervisord ######
-ADD supervisor/supervisord.conf /etc/supervisor/
-ADD supervisor/supervisor-service.sh /etc/service/supervisor/run
-RUN chmod +x /etc/service/supervisor/run
-
-###### clean up #########
-RUN apt-get clean && apt-get autoclean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/supervisord.conf /etc/supervisord.conf
+RUN mkdir -p /etc/supervisor/conf.d
 
 ###### startup prepare ######
-VOLUME ["/var/www/html", "/etc/nginx/ssl", "/etc/nignx/site-enabled", "/etc/php/7.1/php.d", "/var/www/phpext"]
+VOLUME ["/var/www/html", "/etc/nignx/site-enabled", "/usr/local/etc"]
 
-EXPOSE 80 443
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod +x /usr/local/bin/docker-entrypoint
+
+ENTRYPOINT ["docker-entrypoint"]
+
+EXPOSE 80
 WORKDIR /var/www/html
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+root@student:/tmp# cat Dockerfile 
+FROM php:fpm-alpine3.7
+
+ENV DRUSH_VERSION 8.1.16
+ENV DRUSH_LAUCHER 0.6.0
+ENV COLUMNS 0
+
+###### Install packages
+RUN apk --no-cache add g++ gcc make autoconf curl curl-dev bzip2 bzip2-dev zip icu icu-libs icu-dev \
+    libmemcached libmemcached-dev zlib-dev cyrus-sasl-dev mysql-client nginx supervisor tzdata bash \
+    libpng-dev freetype-dev libjpeg-turbo-dev libmcrypt-dev git \
+    postgresql-libs postgresql-dev
+RUN docker-php-ext-configure gd --with-gd --with-freetype-dir=/usr/include/ --with-png-dir=/usr/include/ --with-jpeg-dir=/usr/include/
+
+##### Install memcached and redis packages
+
+##### Install php extension packages
+RUN docker-php-ext-install mysqli opcache gd bz2 zip intl pdo_mysql bcmath pgsql pdo_pgsql calendar
+
+###### set up timezone
+RUN rm /etc/localtime && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+###### install drush ######
+#RUN curl -fsSL -o /usr/local/bin/drush8 https://github.com/drush-ops/drush/releases/download/$DRUSH_VERSION/drush.phar | sh && \
+#    chmod +x /usr/local/bin/drush8 && \
+#    drush8 core-status 
+
+###### install drush laucher ######
+#RUN wget -O drush.phar https://github.com/drush-ops/drush-launcher/releases/download/$DRUSH_LAUCHER/drush.phar && \
+#    chmod +x drush.phar && \
+#    mv drush.phar /usr/local/bin/drush
+#ENV DRUSH_LAUNCHER_FALLBACK=/usr/local/bin/drush8
+
+##install composer
+RUN php -r "readfile('https://getcomposer.org/installer');" > composer-setup.php && \
+    php composer-setup.php && \
+    php -r "unlink('composer-setup.php');" && \
+    mv composer.phar /usr/local/bin/composer
+
+###### change php.ini ######
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/php.ini /usr/local/etc/php/
+#RUN sed -i -e "s/listen = 9000//g" /usr/local/etc/php-fpm.d/zz-docker.conf
+#RUN sed -i -e "s/access.log = \/proc\/self\/fd\/2/access.log = \/proc\/self\/fd\/1/g" /usr/local/etc/php-fpm.d/docker.conf
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/www.conf /usr/local/etc/php-fpm.d/www.conf
+
+#Update nginx config
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/nginx.conf /etc/nginx/
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/drupal8.conf /tmp/drupal.conf
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/laravel.conf /tmp/laravel.conf
+RUN mkdir /etc/nginx/ssl /etc/nginx/site-enabled
+
+###### supervisord ######
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/supervisord.conf /etc/supervisord.conf
+RUN mkdir -p /etc/supervisor/conf.d
+
+###### startup prepare ######
+VOLUME ["/var/www/html", "/etc/nignx/site-enabled", "/usr/local/etc"]
+
+ADD https://raw.githubusercontent.com/sparkpos/docker-nginx-php/master/conf/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod +x /usr/local/bin/docker-entrypoint
+
+ENTRYPOINT ["docker-entrypoint"]
+
+EXPOSE 80
+WORKDIR /var/www/html
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
